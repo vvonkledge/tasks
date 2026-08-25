@@ -1,0 +1,13 @@
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# Store runtime state. Unlike datafile, where a .jsonl may be sample data, the
+# store here is a live queue - never source.
+*.jsonl
+*.jsonl.idx
+*.jsonl.lock
+*.jsonl.quarantine

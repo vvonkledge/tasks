@@ -108,6 +108,7 @@ fields:
   verify_kind: {type: enum, values: [cmd, prose], default: cmd}
   deps:        {type: list, items: str, default: []}
   context:     {type: list, items: str, default: []}
+  cwd:         {type: str, required: false}
   owner:       {type: str, required: false}
   reason:      {type: str, required: false}
   updated:     {type: datetime}
@@ -268,6 +269,28 @@ def _stale(tasks) -> list:
 
 # --------------------------------------------------------------------- verify
 
+def _store_dir(store) -> str:
+    return os.path.dirname(os.path.abspath(store.path)) or "."
+
+
+def _resolve_cwd(raw: str, store) -> str:
+    """Where a task's work and its verification happen. A relative path is
+    relative to the store, which is what the store-directory default already
+    meant; `~` is kept in the record so it stays readable and portable."""
+    p = os.path.expanduser(raw)
+    return p if os.path.isabs(p) else os.path.join(_store_dir(store), p)
+
+
+def _need_dir(path: str, exit_code: int):
+    """A verify that runs in the wrong tree can pass by accident, so a missing
+    directory is a loud error rather than a silent fall back to the store."""
+    if not os.path.isdir(path):
+        raise df.AxiError(f"no such directory: {df.collapse_home(path)}", "NO_SUCH_CWD",
+                          [f"Run `{PROG} list --fields id,cwd` to see where tasks point"],
+                          exit_code=exit_code)
+    return path
+
+
 def _run_verify(cmd: str, cwd: str, timeout: int):
     """Returns (ok, exit_code, output_tail). The verify string is a command the
     store's own operator authored, so it runs through the shell as written."""
@@ -405,10 +428,13 @@ def cmd_add(args) -> int:
     if missing:
         raise df.AxiError(f"unknown dependency: {', '.join(missing)}", "UNKNOWN_DEP",
                           [f"Run `{PROG} list` to see task ids"], exit_code=2)
+    if args.cwd:
+        _need_dir(_resolve_cwd(args.cwd, store), 2)
     rid = _slug(args.title, tasks)
     store.put({"id": rid, "title": args.title, "status": "todo",
                "verify": args.verify, "verify_kind": "prose" if args.prose else "cmd",
-               "deps": args.dep, "context": args.context, "updated": _now()})
+               "deps": args.dep, "context": args.context, "cwd": args.cwd,
+               "updated": _now()})
     ready = not args.dep or all(tasks[d].status == "done" for d in args.dep)
     df.emit({"id": rid, "status": "todo", "ready": ready,
              "help": [f"Run `{PROG} start {rid} --owner <minion>` to dispatch it" if ready
@@ -558,7 +584,7 @@ def cmd_done(args) -> int:
                  "help": [f"Run `{PROG}` for the next ready task"]})
         return 0
 
-    cwd = os.path.dirname(os.path.abspath(store.path)) or "."
+    cwd = _need_dir(_resolve_cwd(t.cwd, store), 1) if t.cwd else _store_dir(store)
     ok, code, tail = _run_verify(t.verify, cwd, args.timeout)
     if not ok:
         shown, full = df.truncate(tail, df.DETAIL_TRUNCATE)
@@ -1186,6 +1212,9 @@ def build_parser():
                     help="--verify is a criterion to assert, not a command to run")
     sp.add_argument("--dep", action="append", default=[], metavar="ID",
                     help="task that must be done first (repeatable)")
+    sp.add_argument("--cwd", metavar="DIR",
+                    help="where the work happens and where --verify runs "
+                         "(default: the store's directory)")
     sp.add_argument("--context", action="append", default=[], metavar="PATH",
                     help="pointer a cold-starting agent should read (repeatable)")
 

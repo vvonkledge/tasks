@@ -3,6 +3,10 @@
 An agent task manager over [datafile](../datafile). One orchestrator creates and
 dispatches tasks; each minion updates only the task it owns.
 
+For the other half of an event-driven orchestrator - where webhooks land before
+the orchestrator decides whether they are work at all - see
+[inbox](../inbox), which follows the same design over the same store.
+
 ```sh
 tasks.py add "Parse CLI flags" --verify "pytest -k flags"
 tasks.py start parse-cli-flags --owner minion-3
@@ -173,11 +177,11 @@ grep '"id":"parse-cli-flags"' tasks.jsonl
 ## Tests
 
 ```sh
-uv run test_tasks.py -q
+just check          # lint, the suite, and the generated skill
 uv run test_tasks.py --cov=. --cov-branch --cov-report=term-missing
 ```
 
-193 tests, 100% line and branch coverage of `tasks.py`. Coverage is not proof of
+200 tests, 100% line and branch coverage of `tasks.py`. Coverage is not proof of
 correctness, so the suite is built around the transitions that can silently
 corrupt state rather than around the lines: a second minion taking an in-flight
 task, a `done` that skips verification, a cycle entering the graph, a lost update

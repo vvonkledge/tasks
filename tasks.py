@@ -131,6 +131,13 @@ def _age(dt: datetime) -> str:
     return f"{int(secs // 86400)}d"
 
 
+def _aware(dt: datetime) -> datetime:
+    """Sorting mixes stored rows with hand-edited ones, and Python refuses to
+    compare a naive datetime with an aware one. The view that runs on every
+    session start must not be the thing that raises."""
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
+
+
 def _days(dt: datetime) -> float:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
@@ -245,12 +252,18 @@ def _cycle(tasks) -> list[str] | None:
 def _ready(tasks) -> list:
     return sorted((t for t in tasks.values()
                    if t.status == "todo" and _deps_met(t, tasks)),
-                  key=lambda t: t.updated)
+                  key=lambda t: _aware(t.updated))
+
+
+def _is_stale(t) -> bool:
+    """Blocked ages too. A task blocked on something only a human can decide is
+    the one kind the orchestrator cannot resolve itself, so elapsed time is the
+    only signal that it needs escalating rather than waiting."""
+    return t.status in ("todo", "blocked") and _days(t.updated) >= STALE_DAYS
 
 
 def _stale(tasks) -> list:
-    return [t for t in tasks.values()
-            if t.status == "todo" and _days(t.updated) >= STALE_DAYS]
+    return [t for t in tasks.values() if _is_stale(t)]
 
 
 # --------------------------------------------------------------------- verify
@@ -323,7 +336,7 @@ def cmd_home(args) -> int:
     # before it asks "what is next?".
     if by["doing"]:
         out["doing"] = [{"id": t.id, "owner": t.owner or "-", "age": _age(t.updated)}
-                        for t in sorted(by["doing"], key=lambda t: t.updated)]
+                        for t in sorted(by["doing"], key=lambda t: _aware(t.updated))]
     if ready:
         rows = []
         for t in ready[:HOME_LIMIT]:
@@ -332,11 +345,13 @@ def cmd_home(args) -> int:
             rows.append({"id": t.id, "title": title})
         out["ready"] = rows
     if by["blocked"]:
+        # Oldest first, with age: nothing else in the store reveals that a
+        # reason has been waiting for an answer since last month.
         rows = []
-        for t in by["blocked"]:
+        for t in sorted(by["blocked"], key=lambda t: _aware(t.updated)):
             reason, full = df.truncate(t.reason or "-", CELL)
             clipped = clipped or full is not None
-            rows.append({"id": t.id, "reason": reason})
+            rows.append({"id": t.id, "reason": reason, "age": _age(t.updated)})
         out["blocked"] = rows
 
     out["counts"] = [{"doing": len(by["doing"]), "ready": len(ready),
@@ -372,7 +387,7 @@ def cmd_home(args) -> int:
     if by["blocked"]:
         help_lines.append(f"Run `{PROG} list --status blocked` for what is stuck")
     if stale and len(help_lines) < 3:
-        help_lines.append(f"Run `{PROG} list --stale` for {len(stale)} todos "
+        help_lines.append(f"Run `{PROG} list --stale` for {len(stale)} tasks "
                           f"untouched over {STALE_DAYS}d")
     if clipped:                                 # 3: name the escape hatch
         help_lines.append(f"Run `{PROG} show <id>` for untruncated values")
@@ -447,8 +462,8 @@ def cmd_list(args) -> int:
     if args.status:
         rows = [t for t in rows if t.status == args.status]
     if args.stale:
-        rows = [t for t in rows if t.status == "todo" and _days(t.updated) >= STALE_DAYS]
-    rows.sort(key=lambda t: (STATUSES.index(t.status), t.updated))
+        rows = [t for t in rows if _is_stale(t)]
+    rows.sort(key=lambda t: (STATUSES.index(t.status), _aware(t.updated)))
     shown = rows[:args.limit]
 
     cells, clipped = [], False
@@ -1183,7 +1198,7 @@ def build_parser():
              f"Examples:\n  {PROG} list --status blocked\n  {PROG} list --stale", cmd_list)
     sp.add_argument("--status", choices=STATUSES)
     sp.add_argument("--stale", action="store_true",
-                    help=f"todos untouched for over {STALE_DAYS} days")
+                    help=f"todo or blocked, untouched for over {STALE_DAYS} days")
     sp.add_argument("--fields", metavar="A,B,C",
                     help=f"comma-separated fields (default: {','.join(LIST_FIELDS)})")
     sp.add_argument("--limit", type=int, default=df.DEFAULT_LIMIT)

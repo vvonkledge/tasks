@@ -301,9 +301,12 @@ that is already `todo` is a no-op. `drop` on an id that does not exist is
 `result: absent` with exit 0. All of them are safe to retry, and safe to run
 from an agent that may lose its response and try again.
 
-**`--stale` is the only time-based view.** It lists todos untouched for over 14
-days, and its count is carried in the home view so you notice without asking.
-Nothing expires on its own; see section 6 for why.
+**`--stale` is the only time-based view.** It lists todo and blocked tasks
+untouched for over 14 days, and its count is carried in the home view so you
+notice without asking. Blocked counts because a task waiting on something only a
+human can decide is the one kind the orchestrator cannot resolve itself - age is
+the only signal that it needs escalating rather than waiting. Nothing expires on
+its own; see section 6 for why.
 
 ---
 
@@ -726,7 +729,7 @@ uvx ruff check --fix .                                        # apply safe fixes
 uv run tasks.py skill --check                                 # drift gate
 ```
 
-193 tests, 100% line and branch coverage of `tasks.py`, so **a new branch
+200 tests, 100% line and branch coverage of `tasks.py`, so **a new branch
 without a test will fail CI**. Coverage is not the bar though. The suite is
 built around the transitions that can silently corrupt state rather than around
 the lines: a second minion taking an in-flight task, a `done` that skips

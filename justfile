@@ -50,3 +50,9 @@ uninstall:
         echo "refusing to remove $link: not a link to $PWD/tasks.py" >&2
         exit 1
     fi
+
+# Lint, test, and check the generated skill
+check:
+    uvx ruff check .
+    uv run test_tasks.py -q
+    uv run tasks.py skill --check

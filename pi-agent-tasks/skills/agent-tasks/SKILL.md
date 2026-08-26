@@ -28,16 +28,34 @@ refuses the transition. `--prose` marks a criterion asserted instead, and
 records why, so a forced completion stays distinguishable from a verified
 one.
 
+## Orientation
+
+Run `tasks` with no arguments before anything else. It is the
+one call that answers what to work on next: in-flight tasks and who
+owns them, the ready set, blocked tasks with their reasons, and the
+counts. All of it is derived on the spot, so a follow-up call is not
+needed to decide what to do next.
+
+```sh
+tasks
+```
+
+The fleet-wide view is the orchestrator's. A worker holds one task
+and reads `tasks show <id>` instead.
+
 ## Commands
 
-Run `tasks.py <command> --help` for the full reference on any of these.
+Run `tasks <command> --help` for the full reference on any of
+these. In a checkout the script runs as `./tasks.py`; installed
+on PATH it is `tasks`, and every command below is the same
+either way.
 
 ### init
 
 create the contract for the task store
 
 ```sh
-tasks.py init
+tasks init
 ```
 
 ### add
@@ -45,7 +63,7 @@ tasks.py init
 create a task (orchestrator only)
 
 ```sh
-tasks.py add --verify VERIFY [--prose] [--dep ID] [--context PATH] title
+tasks add --verify VERIFY [--prose] [--dep ID] [--context PATH] title
 ```
 
 ### show
@@ -53,7 +71,7 @@ tasks.py add --verify VERIFY [--prose] [--dep ID] [--context PATH] title
 one task with all fields
 
 ```sh
-tasks.py show [--full] id
+tasks show [--full] id
 ```
 
 ### list
@@ -61,7 +79,7 @@ tasks.py show [--full] id
 tasks as a table
 
 ```sh
-tasks.py list [--status {todo,doing,done,blocked}] [--stale] [--fields A,B,C] [--limit LIMIT]
+tasks list [--status {todo,doing,done,blocked}] [--stale] [--fields A,B,C] [--limit LIMIT]
 ```
 
 ### start
@@ -69,7 +87,7 @@ tasks.py list [--status {todo,doing,done,blocked}] [--stale] [--fields A,B,C] [-
 dispatch a task to a minion (orchestrator only)
 
 ```sh
-tasks.py start --owner OWNER [--force] id
+tasks start --owner OWNER [--force] id
 ```
 
 ### done
@@ -77,7 +95,7 @@ tasks.py start --owner OWNER [--force] id
 finish a task; runs its verify command (owner only)
 
 ```sh
-tasks.py done [--reason REASON] [--force] [--timeout TIMEOUT] id
+tasks done [--reason REASON] [--force] [--timeout TIMEOUT] id
 ```
 
 ### block
@@ -85,7 +103,7 @@ tasks.py done [--reason REASON] [--force] [--timeout TIMEOUT] id
 mark a task stuck (owner only)
 
 ```sh
-tasks.py block --reason REASON id
+tasks block --reason REASON id
 ```
 
 ### unblock
@@ -93,7 +111,7 @@ tasks.py block --reason REASON id
 return a blocked task to the queue
 
 ```sh
-tasks.py unblock id
+tasks unblock id
 ```
 
 ### reset
@@ -101,7 +119,7 @@ tasks.py unblock id
 reclaim an orphaned in-flight task
 
 ```sh
-tasks.py reset --reason REASON id
+tasks reset --reason REASON id
 ```
 
 ### dep
@@ -109,7 +127,7 @@ tasks.py reset --reason REASON id
 make one task wait on another
 
 ```sh
-tasks.py dep --on ID [--force] id
+tasks dep --on ID [--force] id
 ```
 
 ### setup
@@ -117,7 +135,7 @@ tasks.py dep --on ID [--force] id
 install the session-start integration (§7)
 
 ```sh
-tasks.py setup [--scope {user,project}] [--app {all,claude,codex,opencode}] [--status] [--uninstall]
+tasks setup [--scope {user,project}] [--app {all,claude,codex,opencode}] [--status] [--uninstall]
 ```
 
 ### skill
@@ -125,7 +143,7 @@ tasks.py setup [--scope {user,project}] [--app {all,claude,codex,opencode}] [--s
 generate the on-demand agent skill (§7)
 
 ```sh
-tasks.py skill [--out OUT] [--install] [--uninstall] [--scope {user,project}] [--app {all,claude,pi}] [--check]
+tasks skill [--out OUT] [--install] [--uninstall] [--scope {user,project}] [--app {all,claude,pi}] [--check]
 ```
 
 ### pi-package
@@ -133,7 +151,7 @@ tasks.py skill [--out OUT] [--install] [--uninstall] [--scope {user,project}] [-
 generate the pi package (§7)
 
 ```sh
-tasks.py pi-package [--out OUT] [--check]
+tasks pi-package [--out OUT] [--check]
 ```
 
 ### drop
@@ -141,7 +159,7 @@ tasks.py pi-package [--out OUT] [--check]
 remove a task from the queue
 
 ```sh
-tasks.py drop --reason REASON [--force] id
+tasks drop --reason REASON [--force] id
 ```
 
 ## Output

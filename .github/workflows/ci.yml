@@ -16,18 +16,29 @@ jobs:
       # internals (Store, toon, AxiError, the hook helpers), so this job is
       # also the integration test for that coupling, and it should go red when
       # datafile moves under it.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: tasks
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: vvonkledge/datafile
           path: datafile
 
-      - uses: astral-sh/setup-uv@v5
+      # No cache. Dependencies are declared as open ranges in the inline script
+      # metadata of tasks.py and test_tasks.py, and this repo ships no lockfile
+      # for them to be keyed on, so every cache key here is static: CI would
+      # keep resolving to whatever wheels it first cached and stop noticing that
+      # pydantic or pyyaml moved. That is the same drift the unpinned datafile
+      # checkout above exists to catch. `auto` is not enough, since it enables
+      # the cache on this runner and re-raises the never-invalidated warning.
+      #
+      # Pinned to a full version, unlike checkout above: setup-uv stopped
+      # publishing floating major tags in v8, so `@v10` does not resolve. Bump
+      # this by hand; nothing moves it for you.
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
-          enable-cache: true
+          enable-cache: false
 
       - name: Lint
         working-directory: tasks

@@ -26,6 +26,10 @@ Three consequences worth stating up front:
 - **`ready` is derived, never stored.** So are the counts and the stale set. The
   only orderable truth is the dependency graph.
 
+New here? [RUNBOOK.md](RUNBOOK.md) walks through install, a first queue, the
+ownership protocol, and recovery step by step. This README covers the design
+and the reference.
+
 ## Install
 
 Requires [uv](https://docs.astral.sh/uv/) and `datafile.py`, which is found via
@@ -33,10 +37,14 @@ Requires [uv](https://docs.astral.sh/uv/) and `datafile.py`, which is found via
 `datafile` on `$PATH`.
 
 ```sh
-chmod +x tasks.py
-ln -s "$PWD/tasks.py" ~/.local/bin/tasks
+just install        # symlinks ~/.local/bin/tasks -> ./tasks.py
 tasks init          # writes schema-tasks.yaml next to tasks.jsonl
 ```
+
+The lookup above is relative to the path you invoked, and `abspath()` does not
+resolve symlinks, so linking moves it into the bindir and a sibling checkout
+stops being found. `just install` runs the tool once afterwards and will not
+report success without saying so.
 
 Then pick the agent integration that fits. They achieve the same thing, so you
 need one, not all of them:

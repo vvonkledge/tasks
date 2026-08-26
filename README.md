@@ -108,7 +108,7 @@ solves.
 | --- | --- |
 | *(no arguments)* | in-flight work, the ready set, blocked reasons, counts |
 | `init` | write the contract for the store |
-| `add <title> --verify <s>` | create a task; `--prose`, `--dep`, `--context` |
+| `add <title> --verify <s>` | create a task; `--prose`, `--dep`, `--cwd`, `--context` |
 | `show <id>` | one task, all fields, plus its unmet deps |
 | `list` | table; `--status`, `--stale`, `--fields`, `--limit` |
 | `start <id> --owner <m>` | dispatch; refuses on unmet deps or a live owner |
@@ -126,8 +126,14 @@ Every subcommand has `--help` with its flags and an example.
 
 ## Verification
 
-`--verify` is a shell command run from the store's directory, killed after
-`--timeout` seconds (default 300).
+`--verify` is a shell command run from the task's `--cwd`, or from the store's
+directory when it has none, killed after `--timeout` seconds (default 300).
+
+**Set `--cwd` whenever the work is not in the store's own tree.** A store that
+lives apart from the projects it tracks will otherwise verify against itself, and
+a check like `test -f README.md` can *pass* there by accident. A false green is
+the one failure this tool exists to prevent, so a `--cwd` that does not exist is
+refused at `add` and again at `done` rather than falling back to the store.
 
 `--prose` marks a criterion a human or agent asserts instead. `done` then requires
 `--reason` describing how it was satisfied. Prose is deliberately more work than a
@@ -145,7 +151,7 @@ output, which is why `list` can often be read without the title column.
 
 ## Schema
 
-Nine fields, in `schema-tasks.yaml`, which `init` writes and you can edit:
+Ten fields, in `schema-tasks.yaml`, which `init` writes and you can edit:
 
 ```yaml
 id           # slug, primary key
@@ -155,10 +161,15 @@ verify       # command, or criterion when verify_kind is prose
 verify_kind  # cmd | prose
 deps         # task ids that must be done first
 context      # pointers a cold-starting agent should read
+cwd          # where the work happens and where verify runs
 owner        # the minion holding it; routing, not a lock
 reason       # why blocked, why reset, or why a done was forced
 updated      # set on every transition
 ```
+
+`cwd` is stored as written, so `~/src/app` stays readable in `show` and stays
+portable across machines. A relative path resolves against the store, which is
+what the store-directory default already meant.
 
 A dependency that no longer exists counts as satisfied. It was dropped
 deliberately and can never complete, so treating it as unmet would block its

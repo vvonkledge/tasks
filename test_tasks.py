@@ -116,7 +116,7 @@ class TestBootstrap:
         assert key == "id"
         assert set(model.model_fields) == {
             "id", "title", "status", "verify", "verify_kind", "deps",
-            "context", "owner", "reason", "updated"}
+            "context", "cwd", "owner", "reason", "updated"}
 
     def test_a_corrupt_contract_is_reported_not_raised(self, bare, cli):
         (bare / "schema-tasks.yaml").write_text("fields:\n  id: {type: nope}\n")
@@ -387,6 +387,88 @@ class TestDone:
 
 
 # ------------------------------------------------------------ block / unblock
+
+class TestCwd:
+    """A task's working directory. Without it, verification runs in the store's
+    own tree, where a check like `test -f README.md` can pass by accident: a
+    false green in the one place the tool exists to prevent one."""
+
+    def test_verify_runs_in_the_task_cwd(self, workspace, cli, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "marker").write_text("x")
+        cli("add", "Check marker", "--cwd", str(project), "--verify", "test -f marker")
+        cli("start", "check-marker", "--owner", "m1")
+        code, out, _ = cli("done", "check-marker")
+        assert code == 0 and "verified: true" in out
+
+    def test_the_same_verify_fails_without_a_cwd(self, workspace, cli, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "marker").write_text("x")
+        cli("add", "Check marker", "--verify", "test -f marker")
+        cli("start", "check-marker", "--owner", "m1")
+        code, out, _ = cli("done", "check-marker")
+        assert code == 1 and "VERIFY_FAILED" in out
+
+    def test_it_is_stored_as_written(self, workspace, cli, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        cli("add", "Work there", "--cwd", str(project), "--verify", "true")
+        assert task("work-there").cwd == str(project)
+
+    def test_absent_cwd_keeps_the_store_directory(self, workspace, cli):
+        (workspace / "marker").write_text("x")
+        cli("add", "Check marker", "--verify", "test -f marker")
+        cli("start", "check-marker", "--owner", "m1")
+        code, _, _ = cli("done", "check-marker")
+        assert code == 0
+        assert task("check-marker").cwd is None
+
+    def test_a_relative_cwd_resolves_against_the_store(self, workspace, cli):
+        (workspace / "sub").mkdir()
+        (workspace / "sub" / "marker").write_text("x")
+        cli("add", "Check marker", "--cwd", "sub", "--verify", "test -f marker")
+        cli("start", "check-marker", "--owner", "m1")
+        code, _, _ = cli("done", "check-marker")
+        assert code == 0
+
+    def test_a_tilde_cwd_expands(self, workspace, cli, monkeypatch, tmp_path):
+        fake_home = tmp_path / "home"
+        (fake_home / "project").mkdir(parents=True)
+        (fake_home / "project" / "marker").write_text("x")
+        monkeypatch.setenv("HOME", str(fake_home))
+        cli("add", "Check marker", "--cwd", "~/project", "--verify", "test -f marker")
+        assert task("check-marker").cwd == "~/project"      # readable, not expanded
+        cli("start", "check-marker", "--owner", "m1")
+        code, _, _ = cli("done", "check-marker")
+        assert code == 0
+
+    def test_add_refuses_a_missing_directory(self, workspace, cli):
+        code, out, _ = cli("add", "Bogus", "--cwd", "/no/such/place", "--verify", "true")
+        assert code == 2 and "NO_SUCH_CWD" in out
+        assert "bogus" not in all_tasks()                   # nothing queued
+
+    def test_done_refuses_when_the_directory_vanished(self, workspace, cli, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        cli("add", "Check marker", "--cwd", str(project), "--verify", "true")
+        cli("start", "check-marker", "--owner", "m1")
+        project.rmdir()
+        code, out, _ = cli("done", "check-marker")
+        assert code == 1 and "NO_SUCH_CWD" in out
+        assert task("check-marker").status == "doing"       # unchanged
+
+    def test_a_prose_task_ignores_the_cwd(self, workspace, cli, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        cli("add", "Survey it", "--cwd", str(project), "--prose",
+            "--verify", "a report exists")
+        cli("start", "survey", "--owner", "m1")
+        project.rmdir()                                     # never consulted
+        code, out, _ = cli("done", "survey", "--reason", "the report is written")
+        assert code == 0 and "asserted" in out
+
 
 class TestBlock:
     def test_block_records_the_reason(self, workspace, cli):

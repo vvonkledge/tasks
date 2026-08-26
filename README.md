@@ -108,9 +108,9 @@ solves.
 | --- | --- |
 | *(no arguments)* | in-flight work, the ready set, blocked reasons, counts |
 | `init` | write the contract for the store |
-| `add <title> --verify <s>` | create a task; `--prose`, `--dep`, `--cwd`, `--context` |
+| `add <title> --verify <s>` | create a task; `--prose`, `--dep`, `--project`, `--cwd`, `--context` |
 | `show <id>` | one task, all fields, plus its unmet deps |
-| `list` | table; `--status`, `--stale`, `--fields`, `--limit` |
+| `list` | table; `--status`, `--project`, `--stale`, `--fields`, `--limit` |
 | `start <id> --owner <m>` | dispatch; `--cwd` retargets it; refuses on unmet deps or a live owner |
 | `done <id>` | run verify and finish; `--reason`, `--force` |
 | `block <id> --reason <s>` | mark stuck |
@@ -151,7 +151,7 @@ output, which is why `list` can often be read without the title column.
 
 ## Schema
 
-Ten fields, in `schema-tasks.yaml`, which `init` writes and you can edit:
+Eleven fields, in `schema-tasks.yaml`, which `init` writes and you can edit:
 
 ```yaml
 id           # slug, primary key
@@ -161,6 +161,7 @@ verify       # command, or criterion when verify_kind is prose
 verify_kind  # cmd | prose
 deps         # task ids that must be done first
 context      # pointers a cold-starting agent should read
+project      # stable grouping handle; survives cwd being retargeted
 cwd          # where the work happens and where verify runs
 owner        # the minion holding it; routing, not a lock
 reason       # why blocked, why reset, or why a done was forced
@@ -175,6 +176,12 @@ records it.
 `cwd` is stored as written, so `~/src/app` stays readable in `show` and stays
 portable across machines. A relative path resolves against the store, which is
 what the store-directory default already meant.
+
+`project` groups tasks that `cwd` cannot. An orchestrator that isolates each
+minion in its own git worktree retargets `cwd` to that worktree at dispatch, so
+`cwd` stops naming the project exactly when the work is in flight. `project` is
+an opaque handle the orchestrator owns: `list --project <handle>` answers "what
+is in flight for this project" whatever `cwd` currently points at.
 
 A dependency that no longer exists counts as satisfied. It was dropped
 deliberately and can never complete, so treating it as unmet would block its

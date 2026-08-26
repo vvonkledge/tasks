@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 // Tried in order. The bare name works when tasks is on PATH, which is what
 // makes this package usable on someone else's machine; the second entry is the
 // absolute path baked in when the package was generated.
-const CANDIDATES: string[][] = [["tasks", "--ambient"], ["/etc/profiles/per-user/vvonkledge/bin/uv", "run", "/Users/vvonkledge/vvonkledge/sandbox/tasks/tasks.py", "--ambient"]];
+const CANDIDATES: string[][] = [["tasks", "--ambient"], ["tasks", "--ambient"]];
 const TIMEOUT_MS = 10000;
 const HEADER = "## AXI ambient context: agent-tasks";
 

@@ -45,7 +45,7 @@ tasks.py init
 create a task (orchestrator only)
 
 ```sh
-tasks.py add --verify VERIFY [--prose] [--dep ID] [--cwd DIR] [--context PATH] title
+tasks.py add --verify VERIFY [--prose] [--dep ID] [--project HANDLE] [--cwd DIR] [--context PATH] title
 ```
 
 ### show
@@ -61,7 +61,7 @@ tasks.py show [--full] id
 tasks as a table
 
 ```sh
-tasks.py list [--status {todo,doing,done,blocked}] [--stale] [--fields A,B,C] [--limit LIMIT]
+tasks.py list [--status {todo,doing,done,blocked}] [--project HANDLE] [--stale] [--fields A,B,C] [--limit LIMIT]
 ```
 
 ### start

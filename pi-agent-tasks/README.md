@@ -29,7 +29,7 @@ The extension shells out to `tasks` if it is on `PATH`, otherwise to the
 absolute path baked in when this package was generated:
 
 ```
-/etc/profiles/per-user/vvonkledge/bin/uv run /Users/vvonkledge/vvonkledge/sandbox/tasks/tasks.py --ambient
+tasks --ambient
 ```
 
 For the package to work on another machine, install `tasks` on `PATH`

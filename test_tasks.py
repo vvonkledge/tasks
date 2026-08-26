@@ -613,7 +613,39 @@ class TestHome:
         seed(cli)
         cli("block", "parse-cli-flags", "--reason", "needs a backoff helper")
         _code, out, _ = cli()
-        assert "blocked[1]{id,reason}" in out and "needs a backoff helper" in out
+        assert "blocked[1]{id,reason,age}" in out and "needs a backoff helper" in out
+
+    def test_blocked_rows_carry_age(self, workspace, cli):
+        """A reason alone cannot distinguish a question asked this morning from
+        one that has been waiting on a human for a month."""
+        raw_append(workspace, id="needs-a-call", status="blocked",
+                   reason="human: retry semantics?", updated=ago(days=30))
+        _code, out, _ = cli()
+        assert 'needs-a-call,"human: retry semantics?",30d' in out
+
+    def test_blocked_rows_are_oldest_first(self, workspace, cli):
+        raw_append(workspace, id="asked-today", status="blocked",
+                   reason="new", updated=ago(minutes=5))
+        raw_append(workspace, id="asked-last-month", status="blocked",
+                   reason="old", updated=ago(days=30))
+        _code, out, _ = cli()
+        assert out.index("asked-last-month") < out.index("asked-today")
+
+    def test_a_blocked_task_goes_stale(self, workspace, cli):
+        """The escalation signal: nobody answered, and the count says so."""
+        seed(cli)
+        raw_append(workspace, id="unanswered", status="blocked",
+                   reason="human: which region?", updated=ago(days=tasks.STALE_DAYS + 1))
+        _code, out, _ = cli()
+        assert out.splitlines()[out.splitlines().index(
+            "counts[1]{doing,ready,todo,done,blocked,stale}:") + 1].endswith(",1")
+
+    def test_a_freshly_blocked_task_is_not_stale(self, workspace, cli):
+        seed(cli)
+        cli("block", "parse-cli-flags", "--reason", "human: which region?")
+        _code, out, _ = cli()
+        assert out.splitlines()[out.splitlines().index(
+            "counts[1]{doing,ready,todo,done,blocked,stale}:") + 1].endswith(",0")
 
     def test_the_ready_cap_is_revealed_as_a_hint_not_a_data_field(self, workspace, cli):
         """9: pagination belongs in help, never encoded into the TOON shape."""
@@ -651,6 +683,16 @@ class TestHome:
         _code, out, _ = cli()
         assert out.splitlines()[out.splitlines().index(
             "counts[1]{doing,ready,todo,done,blocked,stale}:") + 1].endswith(",1")
+
+    def test_a_hand_edited_naive_timestamp_does_not_crash_the_view(self, workspace, cli):
+        """Python refuses to compare naive and aware datetimes, and this view is
+        what a session hook runs before the agent can do anything about it."""
+        seed(cli)
+        raw_append(workspace, id="edited-by-hand",
+                   updated=datetime.now(UTC).replace(tzinfo=None).isoformat())
+        code, out, _ = cli()
+        assert code == 0 and "edited-by-hand" in out
+        assert cli("list")[0] == 0
 
     def test_unreadable_lines_are_reported_not_fatal(self, workspace, cli):
         seed(cli)
@@ -698,6 +740,20 @@ class TestListShow:
         raw_append(workspace, id="old-idea", updated=ago(days=tasks.STALE_DAYS + 1))
         _code, out, _ = cli("list", "--stale")
         assert "count: 1 of 2 total" in out and "old-idea" in out
+
+    def test_stale_filter_covers_blocked(self, workspace, cli):
+        seed(cli)
+        raw_append(workspace, id="unanswered", status="blocked", reason="human: ?",
+                   updated=ago(days=tasks.STALE_DAYS + 1))
+        _code, out, _ = cli("list", "--stale")
+        assert "count: 1 of 2 total" in out and "unanswered" in out
+
+    def test_stale_filter_excludes_terminal_statuses(self, workspace, cli):
+        """Done and dropped work cannot rot; only what is still open can."""
+        raw_append(workspace, id="long-done", status="done",
+                   updated=ago(days=tasks.STALE_DAYS + 1))
+        code, out, _ = cli("list", "--stale")
+        assert code == 0 and "count: 0 of 1 total" in out
 
     def test_limit(self, workspace, cli):
         for n in range(5):

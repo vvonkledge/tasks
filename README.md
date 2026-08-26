@@ -175,6 +175,13 @@ corrupt state rather than around the lines: a second minion taking an in-flight
 task, a `done` that skips verification, a cycle entering the graph, a lost update
 from a concurrent write.
 
+CI runs the lint, the tests, and `tasks skill --check`. Because `tasks.py`
+locates `datafile.py` at runtime rather than vendoring it, the workflow checks
+both repositories out as siblings - the layout `tasks.py` already falls back to -
+so CI exercises the real lookup instead of a special case. It deliberately does
+not pin a `datafile` revision: this project builds on that one's internals, so
+the job doubles as the integration test for that coupling.
+
 ## AXI
 
 Built to the [AXI principles](https://axi.md). Output is TOON on stdout,

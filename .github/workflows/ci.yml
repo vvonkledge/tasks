@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # tasks.py deliberately does not vendor datafile.py; it locates one at
+      # runtime. Both repos are checked out as siblings, which is the layout
+      # tasks.py already falls back to, so CI exercises the real lookup rather
+      # than a special case. No ref is pinned: tasks.py builds on datafile
+      # internals (Store, toon, AxiError, the hook helpers), so this job is
+      # also the integration test for that coupling, and it should go red when
+      # datafile moves under it.
+      - uses: actions/checkout@v4
+        with:
+          path: tasks
+
+      - uses: actions/checkout@v4
+        with:
+          repository: vvonkledge/datafile
+          path: datafile
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Lint
+        working-directory: tasks
+        run: uvx ruff check .
+
+      - name: Tests
+        working-directory: tasks
+        env:
+          TASKS_DATAFILE: ${{ github.workspace }}/datafile/datafile.py
+        run: uv run test_tasks.py -q
+
+      # tasks.py generates its agent skill from the argparse tree, so adding a
+      # command or a flag silently stales the committed copy. The skill carries
+      # no machine-specific path, so this check is portable.
+      #
+      # `pi-package --check` is deliberately NOT run here: it bakes the
+      # generating machine's absolute path into README.md and
+      # extensions/ambient-context.ts as a PATH fallback, so it can only pass on
+      # the machine that generated it.
+      - name: Generated skill is current
+        working-directory: tasks
+        env:
+          TASKS_DATAFILE: ${{ github.workspace }}/datafile/datafile.py
+        run: uv run tasks.py skill --check

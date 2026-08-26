@@ -108,6 +108,7 @@ fields:
   verify_kind: {type: enum, values: [cmd, prose], default: cmd}
   deps:        {type: list, items: str, default: []}
   context:     {type: list, items: str, default: []}
+  project:     {type: str, required: false, min_length: 1, max_length: 40}
   cwd:         {type: str, required: false}
   owner:       {type: str, required: false}
   reason:      {type: str, required: false}
@@ -433,7 +434,8 @@ def cmd_add(args) -> int:
     rid = _slug(args.title, tasks)
     store.put({"id": rid, "title": args.title, "status": "todo",
                "verify": args.verify, "verify_kind": "prose" if args.prose else "cmd",
-               "deps": args.dep, "context": args.context, "cwd": args.cwd,
+               "deps": args.dep, "context": args.context,
+               "project": args.project or None, "cwd": args.cwd,
                "updated": _now()})
     ready = not args.dep or all(tasks[d].status == "done" for d in args.dep)
     df.emit({"id": rid, "status": "todo", "ready": ready,
@@ -487,6 +489,8 @@ def cmd_list(args) -> int:
     total = len(rows)
     if args.status:
         rows = [t for t in rows if t.status == args.status]
+    if args.project:
+        rows = [t for t in rows if t.project == args.project]
     if args.stale:
         rows = [t for t in rows if _is_stale(t)]
     rows.sort(key=lambda t: (STATUSES.index(t.status), _aware(t.updated)))
@@ -1212,6 +1216,9 @@ def build_parser():
                     help="--verify is a criterion to assert, not a command to run")
     sp.add_argument("--dep", action="append", default=[], metavar="ID",
                     help="task that must be done first (repeatable)")
+    sp.add_argument("--project", metavar="HANDLE",
+                    help="the project this task belongs to; a stable grouping handle "
+                         "that survives --cwd being retargeted at dispatch")
     sp.add_argument("--cwd", metavar="DIR",
                     help="where the work happens and where --verify runs "
                          "(default: the store's directory)")
@@ -1226,6 +1233,7 @@ def build_parser():
     sp = add("list", "tasks as a table",
              f"Examples:\n  {PROG} list --status blocked\n  {PROG} list --stale", cmd_list)
     sp.add_argument("--status", choices=STATUSES)
+    sp.add_argument("--project", metavar="HANDLE", help="only this project's tasks")
     sp.add_argument("--stale", action="store_true",
                     help=f"todo or blocked, untouched for over {STALE_DAYS} days")
     sp.add_argument("--fields", metavar="A,B,C",

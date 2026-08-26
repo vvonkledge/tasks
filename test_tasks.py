@@ -116,7 +116,7 @@ class TestBootstrap:
         assert key == "id"
         assert set(model.model_fields) == {
             "id", "title", "status", "verify", "verify_kind", "deps",
-            "context", "cwd", "owner", "reason", "updated"}
+            "context", "project", "cwd", "owner", "reason", "updated"}
 
     def test_a_corrupt_contract_is_reported_not_raised(self, bare, cli):
         (bare / "schema-tasks.yaml").write_text("fields:\n  id: {type: nope}\n")
@@ -468,6 +468,44 @@ class TestCwd:
         project.rmdir()                                     # never consulted
         code, out, _ = cli("done", "survey", "--reason", "the report is written")
         assert code == 0 and "asserted" in out
+
+
+class TestProject:
+    """The grouping handle. `cwd` cannot serve as one: dispatch retargets it to a
+    worktree, so it stops naming the project exactly when work is in flight."""
+
+    def test_add_records_the_project(self, workspace, cli):
+        cli("add", "Fix auth", "--project", "webapp", "--verify", "true")
+        assert task(next(iter(all_tasks()))).project == "webapp"
+
+    def test_project_is_optional(self, workspace, cli):
+        code, _, _ = cli("add", "Loose end", "--verify", "true")
+        assert code == 0 and task(next(iter(all_tasks()))).project is None
+
+    def test_list_filters_by_project(self, workspace, cli):
+        cli("add", "One", "--project", "webapp", "--verify", "true")
+        cli("add", "Two", "--project", "api", "--verify", "true")
+        cli("add", "Three", "--verify", "true")
+        _, out, _ = cli("list", "--project", "webapp")
+        assert "one" in out and "two" not in out and "three" not in out
+
+    def test_project_survives_cwd_retargeting(self, workspace, cli, tmp_path):
+        """The whole point of the field: a worktree move must not lose the project."""
+        worktree = tmp_path / "wt"
+        worktree.mkdir()
+        cli("add", "Land the parser", "--project", "webapp", "--cwd",
+            str(workspace), "--verify", "true")
+        rid = next(iter(all_tasks()))           # the slug is tasks.py's to choose
+        cli("start", rid, "--owner", "m1")
+        store = tasks._open(SimpleNamespace(file=None))
+        store.put({**task(rid).model_dump(mode="json"), "cwd": str(worktree)})
+        assert task(rid).cwd == str(worktree)
+        assert task(rid).project == "webapp"    # retargeting did not lose it
+
+    def test_empty_project_is_omission_not_a_value(self, workspace, cli):
+        """A blank flag must not reach the store as "" nor raise a raw traceback."""
+        code, _, _ = cli("add", "Blank handle", "--project", "", "--verify", "true")
+        assert code == 0 and task(next(iter(all_tasks()))).project is None
 
 
 class TestBlock:

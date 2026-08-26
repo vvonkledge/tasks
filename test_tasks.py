@@ -449,6 +449,52 @@ class TestCwd:
         assert code == 2 and "NO_SUCH_CWD" in out
         assert "bogus" not in all_tasks()                   # nothing queued
 
+    def test_start_retargets_the_cwd(self, workspace, cli, tmp_path):
+        """Isolation picks the directory at dispatch, so `start` must be able to set
+        it: the worktree does not exist when the task is written."""
+        shared, worktree = tmp_path / "shared", tmp_path / "worktree"
+        shared.mkdir(), worktree.mkdir()
+        (worktree / "marker").write_text("x")               # only the minion's tree has it
+        cli("add", "Check marker", "--cwd", str(shared), "--verify", "test -f marker")
+        cli("start", "check-marker", "--owner", "m1", "--cwd", str(worktree))
+        assert task("check-marker").cwd == str(worktree)
+        code, out, _ = cli("done", "check-marker")
+        assert code == 0 and "verified: true" in out
+
+    def test_start_without_a_cwd_keeps_the_one_the_task_carries(self, workspace, cli, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        cli("add", "Work there", "--cwd", str(project), "--verify", "true")
+        cli("start", "work-there", "--owner", "m1")
+        assert task("work-there").cwd == str(project)
+
+    def test_start_refuses_a_missing_directory(self, workspace, cli, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        cli("add", "Work there", "--cwd", str(project), "--verify", "true")
+        code, out, _ = cli("start", "work-there", "--owner", "m1", "--cwd", "/no/such/place")
+        assert code == 2 and "NO_SUCH_CWD" in out
+        assert task("work-there").status == "todo"          # not dispatched
+
+    def test_restarting_the_same_owner_elsewhere_retargets(self, workspace, cli, tmp_path):
+        """A silent no-op here would leave the task verifying in the tree it was
+        retargeted away from, which is the false green this field exists to prevent."""
+        first, second = tmp_path / "first", tmp_path / "second"
+        first.mkdir(), second.mkdir()
+        cli("add", "Work there", "--cwd", str(first), "--verify", "true")
+        cli("start", "work-there", "--owner", "m1")
+        code, out, _ = cli("start", "work-there", "--owner", "m1", "--cwd", str(second))
+        assert code == 0 and "retargeted" in out
+        assert task("work-there").cwd == str(second)
+
+    def test_restarting_the_same_owner_in_place_is_still_a_no_op(self, workspace, cli, tmp_path):
+        project = tmp_path / "project"
+        project.mkdir()
+        cli("add", "Work there", "--cwd", str(project), "--verify", "true")
+        cli("start", "work-there", "--owner", "m1")
+        code, out, _ = cli("start", "work-there", "--owner", "m1", "--cwd", str(project))
+        assert code == 0 and "unchanged" in out
+
     def test_done_refuses_when_the_directory_vanished(self, workspace, cli, tmp_path):
         project = tmp_path / "project"
         project.mkdir()

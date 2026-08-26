@@ -111,7 +111,7 @@ solves.
 | `add <title> --verify <s>` | create a task; `--prose`, `--dep`, `--cwd`, `--context` |
 | `show <id>` | one task, all fields, plus its unmet deps |
 | `list` | table; `--status`, `--stale`, `--fields`, `--limit` |
-| `start <id> --owner <m>` | dispatch; refuses on unmet deps or a live owner |
+| `start <id> --owner <m>` | dispatch; `--cwd` retargets it; refuses on unmet deps or a live owner |
 | `done <id>` | run verify and finish; `--reason`, `--force` |
 | `block <id> --reason <s>` | mark stuck |
 | `unblock <id>` | return a blocked task to the queue |
@@ -166,6 +166,11 @@ owner        # the minion holding it; routing, not a lock
 reason       # why blocked, why reset, or why a done was forced
 updated      # set on every transition
 ```
+
+`cwd` can be set when the task is written and retargeted when it is dispatched:
+an agent isolated in its own git worktree verifies there, and that directory does
+not exist yet when the task is queued. `start --cwd <dir>` is how the dispatcher
+records it.
 
 `cwd` is stored as written, so `~/src/app` stays readable in `show` and stays
 portable across machines. A relative path resolves against the store, which is
@@ -265,4 +270,5 @@ complementary rather than cumulative - install whichever fits your agent.
 
 Output is [TOON](https://toonformat.dev) on stdout, including errors. Mutations
 are idempotent: a second `done` does not rerun verify, and `start` by the same
-owner is a no-op.
+owner is a no-op, unless it names a different `--cwd`, which retargets the task
+rather than silently leaving it verifying in the tree it was moved away from.

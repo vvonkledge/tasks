@@ -69,7 +69,7 @@ tasks.py list [--status {todo,doing,done,blocked}] [--stale] [--fields A,B,C] [-
 dispatch a task to a minion (orchestrator only)
 
 ```sh
-tasks.py start --owner OWNER [--force] id
+tasks.py start --owner OWNER [--cwd DIR] [--force] id
 ```
 
 ### done

@@ -528,8 +528,20 @@ def cmd_start(args) -> int:
     store = _open(args)
     tasks, _ = store.load()
     t = tasks.get(args.id) or _need(store, args.id)
+    # Where the work happens can only be known at dispatch: a minion isolated in its
+    # own worktree verifies there, not in the shared tree the task was written
+    # against. Omitting --cwd keeps whatever the task already carries.
+    if args.cwd:
+        _need_dir(_resolve_cwd(args.cwd, store), 2)
+    cwd = args.cwd or t.cwd
     if t.status == "doing" and t.owner == args.owner:   # 6: idempotent
-        df.emit({"id": t.id, "status": "doing", "owner": t.owner, "result": "unchanged",
+        # Same minion, new directory, is a redispatch elsewhere, not a no-op. Letting
+        # it pass silently would leave the task verifying in the tree it was retargeted
+        # away from, which is the false green this field exists to prevent.
+        if cwd != t.cwd:
+            _save(store, t, cwd=cwd)
+        df.emit({"id": t.id, "status": "doing", "owner": t.owner, "cwd": cwd,
+                 "result": "unchanged" if cwd == t.cwd else "retargeted",
                  "help": [f"Run `{PROG} done {t.id}` when the work verifies"]})
         return 0
     _guard_in_flight(t, args.force, f"start {args.id} --owner {args.owner}")
@@ -541,8 +553,8 @@ def cmd_start(args) -> int:
         raise df.AxiError(f"{t.id} has {len(unmet)} unmet dependency(ies)", "DEPS_UNMET",
                           [f"Run `{PROG} show {t.id}` to see them"],
                           exit_code=1, extra={"unmet_deps": unmet})
-    _save(store, t, status="doing", owner=args.owner, reason=None)
-    df.emit({"id": t.id, "status": "doing", "owner": args.owner,
+    _save(store, t, status="doing", owner=args.owner, reason=None, cwd=cwd)
+    df.emit({"id": t.id, "status": "doing", "owner": args.owner, "cwd": cwd,
              "verify_kind": t.verify_kind,
              "help": [f"Run `{PROG} done {t.id}` when the work verifies",
                       f"Run `{PROG} block {t.id} --reason \"<why>\"` if it cannot proceed"]})
@@ -1233,9 +1245,14 @@ def build_parser():
     sp.add_argument("--limit", type=int, default=df.DEFAULT_LIMIT)
 
     sp = add("start", "dispatch a task to a minion (orchestrator only)",
-             f"Example:\n  {PROG} start parse-cli-flags --owner minion-3", cmd_start)
+             f"Examples:\n  {PROG} start parse-cli-flags --owner minion-3\n"
+             f"  {PROG} start parse-cli-flags --owner minion-3 --cwd ~/worktrees/parse-cli-flags",
+             cmd_start)
     sp.add_argument("id")
     sp.add_argument("--owner", required=True, help="the minion taking the task")
+    sp.add_argument("--cwd", metavar="DIR",
+                    help="retarget where the work happens and where --verify runs, "
+                         "for a minion isolated in its own worktree")
     sp.add_argument("--force", action="store_true",
                     help="take a task another owner holds, or with unmet deps")
 

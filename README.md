@@ -182,6 +182,33 @@ so CI exercises the real lookup instead of a special case. It deliberately does
 not pin a `datafile` revision: this project builds on that one's internals, so
 the job doubles as the integration test for that coupling.
 
+### Acceptance
+
+`test_tasks.py` calls `main()` in process, so it proves the CLI is correct and
+can say nothing about whether an agent can drive it. That claim is the one the
+AXI section below makes, and it is tested separately by handing a cold
+[pi](https://pi.dev) agent the generated skill and a goal in plain English:
+
+```sh
+TASKS_ACCEPTANCE=1 uv run test_acceptance_pi.py -q -s
+```
+
+Five scenarios, roughly two minutes and live tokens per run, so they are opt in
+and are not part of CI; without `TASKS_ACCEPTANCE=1` they skip. Each asserts two
+things. The store, because `tasks.jsonl` is the only oracle - the agent's prose
+is never matched, since no correct run has a fixed wording. And the interaction
+budget parsed out of `pi --mode json`, which turns the AXI claims into
+assertions: that the home view removes the follow-up call, that a rejected flag
+costs one corrective turn and not a trip to `--help`, that a refusal is met with
+a report rather than `--force`.
+
+Budgets are ceilings on flailing, not targets. Call counts vary run to run by a
+factor of several, so the sharp assertions are categorical - was the home view
+used at all, was the tool reached by its installed name - and the counts sit
+well above a good run. Both defects this suite has found so far were of that
+kind: the skill typed a binary name the install does not create, and it
+documented fourteen subcommands without mentioning the bare home view.
+
 ## AXI
 
 Built to the [AXI principles](https://axi.md). Output is TOON on stdout,

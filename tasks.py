@@ -110,6 +110,7 @@ fields:
   context:     {type: list, items: str, default: []}
   project:     {type: str, required: false, min_length: 1, max_length: 40}
   cwd:         {type: str, required: false}
+  base:        {type: str, required: false, min_length: 1}
   owner:       {type: str, required: false}
   reason:      {type: str, required: false}
   updated:     {type: datetime}
@@ -436,6 +437,7 @@ def cmd_add(args) -> int:
                "verify": args.verify, "verify_kind": "prose" if args.prose else "cmd",
                "deps": args.dep, "context": args.context,
                "project": args.project or None, "cwd": args.cwd,
+               "base": args.base or None,
                "updated": _now()})
     ready = not args.dep or all(tasks[d].status == "done" for d in args.dep)
     df.emit({"id": rid, "status": "todo", "ready": ready,
@@ -600,6 +602,17 @@ def cmd_done(args) -> int:
                  "help": [f"Run `{PROG}` for the next ready task"]})
         return 0
 
+    if not args.reason:
+        # The command answers whether it passed. It cannot answer what was found,
+        # and for a worker whose session closes the moment its work is accepted,
+        # this record is the whole of what reaches its orchestrator. Asked for
+        # before the verify runs, not after, so a slow command does not make a
+        # worker wait to be told what it was missing.
+        raise df.AxiError("what did you find?", "REASON_REQUIRED",
+                          [f"Run `{PROG} done {t.id} --reason \"<what you found>\"`",
+                           "a passing command is not a report; the reason is the only",
+                           "part of this that outlives the session that did the work"],
+                          exit_code=2)
     cwd = _need_dir(_resolve_cwd(t.cwd, store), 1) if t.cwd else _store_dir(store)
     ok, code, tail = _run_verify(t.verify, cwd, args.timeout)
     if not ok:
@@ -612,8 +625,15 @@ def cmd_done(args) -> int:
                           [f"Run `{PROG} block {t.id} --reason \"<why>\"` if it cannot proceed",
                            f"Run `{PROG} done {t.id} --force --reason \"<why>\"` to override"],
                           exit_code=1, extra=extra)
-    _save(store, t, status="done", reason=None)
+    # Keep what the worker said, even though the command is what proved it. The
+    # verify answers "did it pass"; the reason is the only place "what I found"
+    # survives, and for a worker whose session is closed the moment its work is
+    # accepted, this record is the whole of what reaches its orchestrator.
+    # Discarding it here made `--reason` silently inert on the one path most tasks
+    # take, so a worker that did as it was told was heard by nobody.
+    _save(store, t, status="done", reason=args.reason)
     df.emit({"id": t.id, "status": "done", "verified": True,
+             "reason": args.reason,
              "help": [f"Run `{PROG}` for the next ready task"]})
     return 0
 
@@ -949,8 +969,10 @@ def render_skill() -> str:
              "unblocker and wires it with `dep`.", "",
              "## Verification", "",
              "Every task carries a `--verify` command that `done` runs; a non-zero exit",
-             "refuses the transition. `--prose` marks a criterion asserted instead, and",
-             "`done` then requires `--reason`. `--force --reason` overrides either and",
+             "refuses the transition. `--prose` marks a criterion asserted instead.",
+             "`done` always requires `--reason`, because a passing command says only",
+             "that it passed and the reason is what the orchestrator actually reads.",
+             "`--force --reason` overrides verification and",
              "records why, so a forced completion stays distinguishable from a verified",
              "one.", "",
              "## Commands", "",
@@ -1234,6 +1256,9 @@ def build_parser():
     sp.add_argument("--cwd", metavar="DIR",
                     help="where the work happens and where --verify runs "
                          "(default: the store's directory)")
+    sp.add_argument("--base", metavar="REF",
+                    help="ref this task's work starts from; the dispatcher branches "
+                         "the minion's worktree here (default: the project's checkout)")
     sp.add_argument("--context", action="append", default=[], metavar="PATH",
                     help="pointer a cold-starting agent should read (repeatable)")
 
@@ -1268,7 +1293,8 @@ def build_parser():
              f"Examples:\n  {PROG} done parse-cli-flags\n"
              f"  {PROG} done ship-it --reason \"demo confirmed on staging\"", cmd_done)
     sp.add_argument("id")
-    sp.add_argument("--reason", help="required for prose verification or --force")
+    sp.add_argument("--reason", help="what you found; required, and recorded on "
+                                     "every done")
     sp.add_argument("--force", action="store_true", help="skip verification; records the reason")
     sp.add_argument("--timeout", type=int, default=VERIFY_TIMEOUT,
                     help=f"seconds before verify is killed (default: {VERIFY_TIMEOUT})")

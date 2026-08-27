@@ -45,7 +45,7 @@ tasks.py init
 create a task (orchestrator only)
 
 ```sh
-tasks.py add --verify VERIFY [--prose] [--dep ID] [--project HANDLE] [--cwd DIR] [--context PATH] title
+tasks.py add --verify VERIFY [--prose] [--dep ID] [--project HANDLE] [--cwd DIR] [--base REF] [--context PATH] title
 ```
 
 ### show

@@ -110,6 +110,7 @@ fields:
   context:     {type: list, items: str, default: []}
   project:     {type: str, required: false, min_length: 1, max_length: 40}
   cwd:         {type: str, required: false}
+  base:        {type: str, required: false, min_length: 1}
   owner:       {type: str, required: false}
   reason:      {type: str, required: false}
   updated:     {type: datetime}
@@ -436,6 +437,7 @@ def cmd_add(args) -> int:
                "verify": args.verify, "verify_kind": "prose" if args.prose else "cmd",
                "deps": args.dep, "context": args.context,
                "project": args.project or None, "cwd": args.cwd,
+               "base": args.base or None,
                "updated": _now()})
     ready = not args.dep or all(tasks[d].status == "done" for d in args.dep)
     df.emit({"id": rid, "status": "todo", "ready": ready,
@@ -1234,6 +1236,9 @@ def build_parser():
     sp.add_argument("--cwd", metavar="DIR",
                     help="where the work happens and where --verify runs "
                          "(default: the store's directory)")
+    sp.add_argument("--base", metavar="REF",
+                    help="ref this task's work starts from; the dispatcher branches "
+                         "the minion's worktree here (default: the project's checkout)")
     sp.add_argument("--context", action="append", default=[], metavar="PATH",
                     help="pointer a cold-starting agent should read (repeatable)")
 

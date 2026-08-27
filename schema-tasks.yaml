@@ -13,6 +13,7 @@ fields:
   context:     {type: list, items: str, default: []}
   project:     {type: str, required: false, min_length: 1, max_length: 40}
   cwd:         {type: str, required: false}
+  base:        {type: str, required: false, min_length: 1}
   owner:       {type: str, required: false}
   reason:      {type: str, required: false}
   updated:     {type: datetime}

@@ -108,7 +108,7 @@ solves.
 | --- | --- |
 | *(no arguments)* | in-flight work, the ready set, blocked reasons, counts |
 | `init` | write the contract for the store |
-| `add <title> --verify <s>` | create a task; `--prose`, `--dep`, `--project`, `--cwd`, `--context` |
+| `add <title> --verify <s>` | create a task; `--prose`, `--dep`, `--project`, `--cwd`, `--base`, `--context` |
 | `show <id>` | one task, all fields, plus its unmet deps |
 | `list` | table; `--status`, `--project`, `--stale`, `--fields`, `--limit` |
 | `start <id> --owner <m>` | dispatch; `--cwd` retargets it; refuses on unmet deps or a live owner |
@@ -151,7 +151,7 @@ output, which is why `list` can often be read without the title column.
 
 ## Schema
 
-Eleven fields, in `schema-tasks.yaml`, which `init` writes and you can edit:
+Twelve fields, in `schema-tasks.yaml`, which `init` writes and you can edit:
 
 ```yaml
 id           # slug, primary key
@@ -163,6 +163,7 @@ deps         # task ids that must be done first
 context      # pointers a cold-starting agent should read
 project      # stable grouping handle; survives cwd being retargeted
 cwd          # where the work happens and where verify runs
+base         # ref the dispatcher branches this task's worktree from
 owner        # the minion holding it; routing, not a lock
 reason       # why blocked, why reset, or why a done was forced
 updated      # set on every transition
@@ -182,6 +183,12 @@ minion in its own git worktree retargets `cwd` to that worktree at dispatch, so
 `cwd` stops naming the project exactly when the work is in flight. `project` is
 an opaque handle the orchestrator owns: `list --project <handle>` answers "what
 is in flight for this project" whatever `cwd` currently points at.
+
+`base` answers a different question from `cwd`: not where the work happens, but
+what it starts from. A task queued against an existing branch - to review it, or
+to build on it - names that ref here, and the dispatcher branches the minion's
+worktree from it instead of from whatever the project is checked out to. No
+`base` means the project's own checkout, which is what most work wants.
 
 A dependency that no longer exists counts as satisfied. It was dropped
 deliberately and can never complete, so treating it as unmet would block its

@@ -116,7 +116,7 @@ class TestBootstrap:
         assert key == "id"
         assert set(model.model_fields) == {
             "id", "title", "status", "verify", "verify_kind", "deps",
-            "context", "project", "cwd", "owner", "reason", "updated"}
+            "context", "project", "cwd", "base", "owner", "reason", "updated"}
 
     def test_a_corrupt_contract_is_reported_not_raised(self, bare, cli):
         (bare / "schema-tasks.yaml").write_text("fields:\n  id: {type: nope}\n")
@@ -183,7 +183,7 @@ class TestAdd:
         seed(cli)
         t = task("parse-cli-flags")
         assert t.verify_kind == "cmd" and t.deps == [] and t.context == []
-        assert t.owner is None and t.reason is None
+        assert t.owner is None and t.reason is None and t.base is None
 
     def test_prose_marks_the_verify_kind(self, workspace, cli):
         cli("add", "Ship", "--verify", "ops confirms", "--prose")
@@ -193,6 +193,10 @@ class TestAdd:
         cli("add", "Ship", "--verify", "exit 0",
             "--context", "a.py", "--context", "b.py")
         assert task("ship").context == ["a.py", "b.py"]
+
+    def test_a_base_names_the_ref_the_work_starts_from(self, workspace, cli):
+        cli("add", "Review the branch", "--verify", "exit 0", "--base", "siana/ship-x")
+        assert task("review-the-branch").base == "siana/ship-x"
 
     def test_a_task_with_a_pending_dep_is_not_ready(self, workspace, cli):
         seed(cli)

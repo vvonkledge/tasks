@@ -614,8 +614,15 @@ def cmd_done(args) -> int:
                           [f"Run `{PROG} block {t.id} --reason \"<why>\"` if it cannot proceed",
                            f"Run `{PROG} done {t.id} --force --reason \"<why>\"` to override"],
                           exit_code=1, extra=extra)
-    _save(store, t, status="done", reason=None)
+    # Keep what the worker said, even though the command is what proved it. The
+    # verify answers "did it pass"; the reason is the only place "what I found"
+    # survives, and for a worker whose session is closed the moment its work is
+    # accepted, this record is the whole of what reaches its orchestrator.
+    # Discarding it here made `--reason` silently inert on the one path most tasks
+    # take, so a worker that did as it was told was heard by nobody.
+    _save(store, t, status="done", reason=args.reason)
     df.emit({"id": t.id, "status": "done", "verified": True,
+             **({"reason": args.reason} if args.reason else {}),
              "help": [f"Run `{PROG}` for the next ready task"]})
     return 0
 
@@ -1273,7 +1280,8 @@ def build_parser():
              f"Examples:\n  {PROG} done parse-cli-flags\n"
              f"  {PROG} done ship-it --reason \"demo confirmed on staging\"", cmd_done)
     sp.add_argument("id")
-    sp.add_argument("--reason", help="required for prose verification or --force")
+    sp.add_argument("--reason", help="what you found; recorded on every done, and "
+                                     "required for prose verification or --force")
     sp.add_argument("--force", action="store_true", help="skip verification; records the reason")
     sp.add_argument("--timeout", type=int, default=VERIFY_TIMEOUT,
                     help=f"seconds before verify is killed (default: {VERIFY_TIMEOUT})")

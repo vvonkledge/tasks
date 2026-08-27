@@ -364,6 +364,26 @@ class TestDone:
         assert code == 0 and "verified: asserted" in out
         assert task("ship").reason == "ops signed off"
 
+    def test_a_passing_command_still_records_what_the_worker_found(self, workspace, cli):
+        # The verify says whether it passed. The reason says what was found, and it
+        # is the only place that survives a worker whose session closes the moment
+        # its work is accepted. This path used to store None however it was called,
+        # which made `--reason` inert on the route most tasks take.
+        seed(cli)
+        cli("start", "parse-cli-flags", "--owner", "m1")
+        code, out, _ = cli("done", "parse-cli-flags",
+                           "--reason", "the parser drops trailing commas")
+        assert code == 0 and "verified: true" in out
+        assert task("parse-cli-flags").reason == "the parser drops trailing commas"
+
+    def test_a_passing_command_with_nothing_said_records_nothing(self, workspace, cli):
+        # Keeping the reason must not invent one: an absent reason stays absent
+        # rather than becoming an empty string the queue would render as a finding.
+        seed(cli)
+        cli("start", "parse-cli-flags", "--owner", "m1")
+        code, _, _ = cli("done", "parse-cli-flags")
+        assert code == 0 and task("parse-cli-flags").reason is None
+
     def test_force_without_a_reason_is_refused(self, workspace, cli):
         seed(cli, verify="exit 1")
         cli("start", "parse-cli-flags", "--owner", "m1")

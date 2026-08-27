@@ -82,6 +82,13 @@ def seed(cli, title="Parse CLI flags", verify="exit 0"):
     return out.splitlines()[0].split(": ", 1)[1]
 
 
+def finish(cli, rid, *extra, reason="the command passed and nothing surprised me"):
+    """`done` with the reason it requires. Most tests here are about something other
+    than what a worker reported, so the reason is supplied once rather than repeated
+    at every call; the tests that are about it pass their own."""
+    return cli("done", rid, "--reason", reason, *extra)
+
+
 # ------------------------------------------------------------- bootstrap (§6)
 
 class TestBootstrap:
@@ -215,7 +222,7 @@ class TestAdd:
     def test_a_dep_that_is_already_done_leaves_it_ready(self, workspace, cli):
         seed(cli)
         cli("start", "parse-cli-flags", "--owner", "m1")
-        cli("done", "parse-cli-flags")
+        finish(cli, "parse-cli-flags")
         code, out, _ = cli("add", "Ship", "--verify", "exit 0",
                            "--dep", "parse-cli-flags")
         assert code == 0 and "ready: true" in out
@@ -281,7 +288,7 @@ class TestStart:
     def test_a_done_task_cannot_be_restarted(self, workspace, cli):
         seed(cli)
         cli("start", "parse-cli-flags", "--owner", "m1")
-        cli("done", "parse-cli-flags")
+        finish(cli, "parse-cli-flags")
         code, out, _ = cli("start", "parse-cli-flags", "--owner", "m2")
         assert code == 1 and "INVALID_TRANSITION" in out
 
@@ -309,14 +316,14 @@ class TestDone:
     def test_a_passing_verify_completes_the_task(self, workspace, cli):
         seed(cli, verify="exit 0")
         cli("start", "parse-cli-flags", "--owner", "m1")
-        code, out, _ = cli("done", "parse-cli-flags")
+        code, out, _ = finish(cli, "parse-cli-flags")
         assert code == 0 and "verified: true" in out
         assert task("parse-cli-flags").status == "done"
 
     def test_a_failing_verify_refuses_and_reports(self, workspace, cli):
         seed(cli, verify="echo nope >&2; exit 3")
         cli("start", "parse-cli-flags", "--owner", "m1")
-        code, out, _ = cli("done", "parse-cli-flags")
+        code, out, _ = finish(cli, "parse-cli-flags")
         assert code == 1 and "VERIFY_FAILED" in out
         assert "exit_code: 3" in out and "nope" in out
         assert task("parse-cli-flags").status == "doing"      # unchanged
@@ -333,20 +340,21 @@ class TestDone:
         store = str(home / "tasks.jsonl")
         cli("-f", store, "add", "Check marker", "--verify", "test -f marker")
         cli("-f", store, "start", "check-marker", "--owner", "m1")
-        code, out, _ = cli("-f", store, "done", "check-marker")
+        code, out, _ = cli("-f", store, "done", "check-marker",
+                            "--reason", "the marker was written")
         assert code == 0 and "verified: true" in out
 
     def test_a_second_done_does_not_rerun_verify(self, workspace, cli):
         seed(cli, verify="test ! -f ran && touch ran")
         cli("start", "parse-cli-flags", "--owner", "m1")
-        assert cli("done", "parse-cli-flags")[0] == 0
-        code, out, _ = cli("done", "parse-cli-flags")         # would fail if rerun
+        assert finish(cli, "parse-cli-flags")[0] == 0
+        code, out, _ = finish(cli, "parse-cli-flags")         # would fail if rerun
         assert code == 0 and "unchanged" in out
 
     def test_a_hanging_verify_is_killed(self, workspace, cli):
         seed(cli, verify="sleep 30")
         cli("start", "parse-cli-flags", "--owner", "m1")
-        code, out, _ = cli("done", "parse-cli-flags", "--timeout", "1")
+        code, out, _ = finish(cli, "parse-cli-flags", "--timeout", "1")
         assert code == 1 and "VERIFY_FAILED" in out and "timed out" in out
 
     def test_prose_requires_a_reason(self, workspace, cli):
@@ -376,13 +384,24 @@ class TestDone:
         assert code == 0 and "verified: true" in out
         assert task("parse-cli-flags").reason == "the parser drops trailing commas"
 
-    def test_a_passing_command_with_nothing_said_records_nothing(self, workspace, cli):
-        # Keeping the reason must not invent one: an absent reason stays absent
-        # rather than becoming an empty string the queue would render as a finding.
+    def test_a_passing_command_with_nothing_said_is_refused(self, workspace, cli):
+        # A passing command is not a report. The orchestrator reads the reason, so a
+        # `done` that says nothing is a worker's findings going nowhere.
         seed(cli)
         cli("start", "parse-cli-flags", "--owner", "m1")
+        code, out, _ = cli("done", "parse-cli-flags")
+        assert code == 2 and "REASON_REQUIRED" in out
+        assert task("parse-cli-flags").status == "doing"      # still theirs to finish
+
+    def test_the_refusal_comes_before_the_verify_runs(self, workspace, cli):
+        # A worker should not wait out a slow command to be told what it was
+        # missing, and a verify with a side effect should not fire for a call that
+        # was never going to be accepted.
+        marker = workspace / "verify-ran"
+        seed(cli, verify=f"touch {marker}")
+        cli("start", "parse-cli-flags", "--owner", "m1")
         code, _, _ = cli("done", "parse-cli-flags")
-        assert code == 0 and task("parse-cli-flags").reason is None
+        assert code == 2 and not marker.exists()
 
     def test_force_without_a_reason_is_refused(self, workspace, cli):
         seed(cli, verify="exit 1")
@@ -403,18 +422,18 @@ class TestDone:
         seed(cli)
         cli("start", "parse-cli-flags", "--owner", "m1")
         cli("block", "parse-cli-flags", "--reason", "stuck")
-        code, out, _ = cli("done", "parse-cli-flags")
+        code, out, _ = finish(cli, "parse-cli-flags")
         assert code == 1 and "INVALID_TRANSITION" in out and "stuck" in out
 
     def test_a_todo_can_be_finished_without_dispatch(self, workspace, cli):
         seed(cli, verify="exit 0")
-        code, _, _ = cli("done", "parse-cli-flags")
+        code, _, _ = finish(cli, "parse-cli-flags")
         assert code == 0 and task("parse-cli-flags").status == "done"
 
     def test_owner_survives_completion_for_the_record(self, workspace, cli):
         seed(cli)
         cli("start", "parse-cli-flags", "--owner", "minion-3")
-        cli("done", "parse-cli-flags")
+        finish(cli, "parse-cli-flags")
         assert task("parse-cli-flags").owner == "minion-3"
 
 
@@ -431,7 +450,7 @@ class TestCwd:
         (project / "marker").write_text("x")
         cli("add", "Check marker", "--cwd", str(project), "--verify", "test -f marker")
         cli("start", "check-marker", "--owner", "m1")
-        code, out, _ = cli("done", "check-marker")
+        code, out, _ = finish(cli, "check-marker")
         assert code == 0 and "verified: true" in out
 
     def test_the_same_verify_fails_without_a_cwd(self, workspace, cli, tmp_path):
@@ -440,7 +459,7 @@ class TestCwd:
         (project / "marker").write_text("x")
         cli("add", "Check marker", "--verify", "test -f marker")
         cli("start", "check-marker", "--owner", "m1")
-        code, out, _ = cli("done", "check-marker")
+        code, out, _ = finish(cli, "check-marker")
         assert code == 1 and "VERIFY_FAILED" in out
 
     def test_it_is_stored_as_written(self, workspace, cli, tmp_path):
@@ -453,7 +472,7 @@ class TestCwd:
         (workspace / "marker").write_text("x")
         cli("add", "Check marker", "--verify", "test -f marker")
         cli("start", "check-marker", "--owner", "m1")
-        code, _, _ = cli("done", "check-marker")
+        code, _, _ = finish(cli, "check-marker")
         assert code == 0
         assert task("check-marker").cwd is None
 
@@ -462,7 +481,7 @@ class TestCwd:
         (workspace / "sub" / "marker").write_text("x")
         cli("add", "Check marker", "--cwd", "sub", "--verify", "test -f marker")
         cli("start", "check-marker", "--owner", "m1")
-        code, _, _ = cli("done", "check-marker")
+        code, _, _ = finish(cli, "check-marker")
         assert code == 0
 
     def test_a_tilde_cwd_expands(self, workspace, cli, monkeypatch, tmp_path):
@@ -473,7 +492,7 @@ class TestCwd:
         cli("add", "Check marker", "--cwd", "~/project", "--verify", "test -f marker")
         assert task("check-marker").cwd == "~/project"      # readable, not expanded
         cli("start", "check-marker", "--owner", "m1")
-        code, _, _ = cli("done", "check-marker")
+        code, _, _ = finish(cli, "check-marker")
         assert code == 0
 
     def test_add_refuses_a_missing_directory(self, workspace, cli):
@@ -490,7 +509,7 @@ class TestCwd:
         cli("add", "Check marker", "--cwd", str(shared), "--verify", "test -f marker")
         cli("start", "check-marker", "--owner", "m1", "--cwd", str(worktree))
         assert task("check-marker").cwd == str(worktree)
-        code, out, _ = cli("done", "check-marker")
+        code, out, _ = finish(cli, "check-marker")
         assert code == 0 and "verified: true" in out
 
     def test_start_without_a_cwd_keeps_the_one_the_task_carries(self, workspace, cli, tmp_path):
@@ -533,7 +552,7 @@ class TestCwd:
         cli("add", "Check marker", "--cwd", str(project), "--verify", "true")
         cli("start", "check-marker", "--owner", "m1")
         project.rmdir()
-        code, out, _ = cli("done", "check-marker")
+        code, out, _ = finish(cli, "check-marker")
         assert code == 1 and "NO_SUCH_CWD" in out
         assert task("check-marker").status == "doing"       # unchanged
 
@@ -611,7 +630,7 @@ class TestBlock:
 
     def test_a_done_task_cannot_be_blocked(self, workspace, cli):
         seed(cli)
-        cli("done", "parse-cli-flags")
+        finish(cli, "parse-cli-flags")
         code, out, _ = cli("block", "parse-cli-flags", "--reason", "x")
         assert code == 1 and "INVALID_TRANSITION" in out
 
@@ -671,7 +690,7 @@ class TestReset:
 
     def test_reset_never_discards_a_verified_result(self, workspace, cli):
         seed(cli)
-        cli("done", "parse-cli-flags")
+        finish(cli, "parse-cli-flags")
         code, out, _ = cli("reset", "parse-cli-flags", "--reason", "x")
         assert code == 1 and "INVALID_TRANSITION" in out
         assert task("parse-cli-flags").status == "done"
@@ -901,7 +920,7 @@ class TestHome:
 
     def test_a_fully_done_queue_still_suggests_a_next_step(self, workspace, cli):
         seed(cli)
-        cli("done", "parse-cli-flags")
+        finish(cli, "parse-cli-flags")
         code, out, _ = cli()
         assert code == 0 and "to queue more work" in out
 
@@ -1087,7 +1106,8 @@ class TestConcurrency:
             tasks.main(["-f", store, "add", f"Task number {n}", "--verify", "exit 0"])
             tasks.main(["-f", store, "start", f"task-number-{n}", "--owner", f"m{n}"])
         procs = [subprocess.Popen(
-            [sys.executable, str(TASKS_PY), "-f", store, "done", f"task-number-{n}"],
+            [sys.executable, str(TASKS_PY), "-f", store, "done", f"task-number-{n}",
+             "--reason", f"minion {n} finished"],
             cwd=str(workspace), stdout=subprocess.DEVNULL) for n in range(2)]
         for p in procs:
             assert p.wait(timeout=60) == 0
@@ -1173,12 +1193,12 @@ class TestTruncationHints:
 
     def test_a_truncated_verify_tail_reports_its_size(self, workspace, cli):
         cli("add", "Noisy", "--verify", "python3 -c \"print('x'*2000)\"; exit 1")
-        code, out, _ = cli("done", "noisy")
+        code, out, _ = finish(cli, "noisy")
         assert code == 1 and "output_length: 2000" in out
 
     def test_a_short_verify_tail_carries_no_size(self, workspace, cli):
         cli("add", "Quiet", "--verify", "echo small; exit 1")
-        code, out, _ = cli("done", "quiet")
+        code, out, _ = finish(cli, "quiet")
         assert code == 1 and "output_length" not in out
 
     def test_the_home_view_names_the_escape_hatch_when_it_clips(self, workspace, cli):

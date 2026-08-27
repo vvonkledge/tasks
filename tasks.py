@@ -602,6 +602,17 @@ def cmd_done(args) -> int:
                  "help": [f"Run `{PROG}` for the next ready task"]})
         return 0
 
+    if not args.reason:
+        # The command answers whether it passed. It cannot answer what was found,
+        # and for a worker whose session closes the moment its work is accepted,
+        # this record is the whole of what reaches its orchestrator. Asked for
+        # before the verify runs, not after, so a slow command does not make a
+        # worker wait to be told what it was missing.
+        raise df.AxiError("what did you find?", "REASON_REQUIRED",
+                          [f"Run `{PROG} done {t.id} --reason \"<what you found>\"`",
+                           "a passing command is not a report; the reason is the only",
+                           "part of this that outlives the session that did the work"],
+                          exit_code=2)
     cwd = _need_dir(_resolve_cwd(t.cwd, store), 1) if t.cwd else _store_dir(store)
     ok, code, tail = _run_verify(t.verify, cwd, args.timeout)
     if not ok:
@@ -622,7 +633,7 @@ def cmd_done(args) -> int:
     # take, so a worker that did as it was told was heard by nobody.
     _save(store, t, status="done", reason=args.reason)
     df.emit({"id": t.id, "status": "done", "verified": True,
-             **({"reason": args.reason} if args.reason else {}),
+             "reason": args.reason,
              "help": [f"Run `{PROG}` for the next ready task"]})
     return 0
 
@@ -958,8 +969,10 @@ def render_skill() -> str:
              "unblocker and wires it with `dep`.", "",
              "## Verification", "",
              "Every task carries a `--verify` command that `done` runs; a non-zero exit",
-             "refuses the transition. `--prose` marks a criterion asserted instead, and",
-             "`done` then requires `--reason`. `--force --reason` overrides either and",
+             "refuses the transition. `--prose` marks a criterion asserted instead.",
+             "`done` always requires `--reason`, because a passing command says only",
+             "that it passed and the reason is what the orchestrator actually reads.",
+             "`--force --reason` overrides verification and",
              "records why, so a forced completion stays distinguishable from a verified",
              "one.", "",
              "## Commands", "",
@@ -1280,8 +1293,8 @@ def build_parser():
              f"Examples:\n  {PROG} done parse-cli-flags\n"
              f"  {PROG} done ship-it --reason \"demo confirmed on staging\"", cmd_done)
     sp.add_argument("id")
-    sp.add_argument("--reason", help="what you found; recorded on every done, and "
-                                     "required for prose verification or --force")
+    sp.add_argument("--reason", help="what you found; required, and recorded on "
+                                     "every done")
     sp.add_argument("--force", action="store_true", help="skip verification; records the reason")
     sp.add_argument("--timeout", type=int, default=VERIFY_TIMEOUT,
                     help=f"seconds before verify is killed (default: {VERIFY_TIMEOUT})")

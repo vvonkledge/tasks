@@ -10,7 +10,7 @@ the orchestrator decides whether they are work at all - see
 ```sh
 tasks.py add "Parse CLI flags" --verify "pytest -k flags"
 tasks.py start parse-cli-flags --owner minion-3
-tasks.py done parse-cli-flags          # runs the verify command; refuses on non-zero
+tasks.py done parse-cli-flags --reason "…"   # runs verify; refuses on non-zero
 ```
 
 ## Why
@@ -74,7 +74,7 @@ from the shape of the fleet rather than from a lock:
 | create | orchestrator | `add "…" --verify …` → `todo` |
 | dispatch | orchestrator | `start <id> --owner <minion>` → `doing` |
 | work | minion | nothing |
-| finish | minion | `done <id>` or `block <id> --reason …` |
+| finish | minion | `done <id> --reason …` or `block <id> --reason …` |
 | reconcile | orchestrator | reads; ownership has returned |
 
 **The rule:** a task in `doing` belongs to its owner, and the orchestrator treats
@@ -112,7 +112,7 @@ solves.
 | `show <id>` | one task, all fields, plus its unmet deps |
 | `list` | table; `--status`, `--project`, `--stale`, `--fields`, `--limit` |
 | `start <id> --owner <m>` | dispatch; `--cwd` retargets it; refuses on unmet deps or a live owner |
-| `done <id>` | run verify and finish; `--reason`, `--force` |
+| `done <id> --reason <s>` | run verify and finish; `--force` skips verification |
 | `block <id> --reason <s>` | mark stuck |
 | `unblock <id>` | return a blocked task to the queue |
 | `reset <id> --reason <s>` | reclaim an orphaned in-flight task |
@@ -165,7 +165,7 @@ project      # stable grouping handle; survives cwd being retargeted
 cwd          # where the work happens and where verify runs
 base         # ref the dispatcher branches this task's worktree from
 owner        # the minion holding it; routing, not a lock
-reason       # why blocked, why reset, or why a done was forced
+reason       # what the worker found on done, or why blocked, reset or dropped
 updated      # set on every transition
 ```
 

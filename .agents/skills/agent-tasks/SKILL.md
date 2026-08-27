@@ -23,8 +23,10 @@ unblocker and wires it with `dep`.
 ## Verification
 
 Every task carries a `--verify` command that `done` runs; a non-zero exit
-refuses the transition. `--prose` marks a criterion asserted instead, and
-`done` then requires `--reason`. `--force --reason` overrides either and
+refuses the transition. `--prose` marks a criterion asserted instead.
+`done` always requires `--reason`, because a passing command says only
+that it passed and the reason is what the orchestrator actually reads.
+`--force --reason` overrides verification and
 records why, so a forced completion stays distinguishable from a verified
 one.
 

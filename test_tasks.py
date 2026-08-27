@@ -118,6 +118,14 @@ class TestBootstrap:
             "id", "title", "status", "verify", "verify_kind", "deps",
             "context", "project", "cwd", "base", "owner", "reason", "updated"}
 
+    def test_the_checked_in_contract_matches_the_one_the_cli_writes(self):
+        """A field added to CONTRACT and not to the copy at the repo root is a
+        store that rejects what the CLI writes, inside pydantic, as a raw
+        traceback rather than a refusal. It has happened once already, and
+        nothing else in `just check` compares the two."""
+        assert (HERE / "schema-tasks.yaml").read_text() == tasks.CONTRACT, \
+            "run `tasks.py init` at the repo root after changing CONTRACT"
+
     def test_a_corrupt_contract_is_reported_not_raised(self, bare, cli):
         (bare / "schema-tasks.yaml").write_text("fields:\n  id: {type: nope}\n")
         code, out, err = cli("list")
